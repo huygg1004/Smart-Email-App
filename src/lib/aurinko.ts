@@ -22,7 +22,6 @@ export const getAurinkoAuthUrl = async (
 
 export const exchangeCodeForAccessToken = async (code: string) => {
   try {
-    // Include the code in the URL as you've shown.
     const tokenUrl = `https://api.aurinko.io/v1/auth/token/${encodeURIComponent(code)}`;
     console.log("Exchanging code for token at:", tokenUrl);
 
