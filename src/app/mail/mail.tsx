@@ -12,6 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import AccountSwitcher from "./account-switcher";
 import SideBar from "./sidebar";
+import ThreadList from "./thread-list";
 
 type Props = {
   defaultLayout?: number[];
@@ -27,6 +28,7 @@ const Mail = ({
   const [isCollapsed, setIsCollapsed] = React.useState(defaultCollapsed);
 
   return (
+    
     <TooltipProvider delayDuration={0}>
       <ResizablePanelGroup
         direction="horizontal"
@@ -47,6 +49,7 @@ const Mail = ({
             isCollapsed && "min-w-[50px]",
           )}
         >
+          
           <div className="flex h-full flex-1 flex-col">
             {/* Account Switcher */}
             <div
@@ -97,12 +100,14 @@ const Mail = ({
 
             {/* Tab Content for Inbox */}
             <TabsContent value="inbox">
-              <div className="px-4 py-2">Inbox content</div>
+              {/* <div className="px-4 py-2">Inbox content</div> */}
+              <ThreadList/>
             </TabsContent>
 
             {/* Tab Content for Done */}
             <TabsContent value="done">
-              <div className="px-4 py-2">Done content</div>
+              {/* <div className="px-4 py-2">Done content</div> */}
+              <ThreadList/>
             </TabsContent>
           </Tabs>
         </ResizablePanel>
