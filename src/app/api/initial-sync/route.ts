@@ -25,6 +25,7 @@ export const POST = async (req: NextRequest) => {
     return NextResponse.json({ error: "ACCOUNT_NOT_FOUND" }, { status: 404 });
 
   const account = new Account(dbAccount.accessToken);
+  
   const response = await account.performInitialSync();
 
   if (!response)
@@ -44,8 +45,6 @@ export const POST = async (req: NextRequest) => {
     },
   });
   console;
-
-  // console.log("emails list: ", emails);
 
   await syncEmailsToDatabase(emails, accountId);
 

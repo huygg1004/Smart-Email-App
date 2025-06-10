@@ -12,8 +12,6 @@ export async function syncEmailsToDatabase(
   emails: EmailMessage[],
   accountId: string,
 ) {
-  console.log("Attempting to sync emails to database", emails.length);
-  console.log(`Syncing ${emails.length} emails to database`);
 
   const limit = pLimit(1);
 
@@ -32,7 +30,6 @@ async function upsertEmail(
   accountId: string,
   index: number,
 ) {
-  console.log(`Upserting email ${index + 1}`, JSON.stringify(email, null, 2));
 
   try {
     let emailLabelType: "inbox" | "sent" | "draft" = "inbox";

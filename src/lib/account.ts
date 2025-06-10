@@ -92,19 +92,12 @@ export class Account {
       console.log(
         "Raw Initial sync response: ",
         JSON.stringify(syncResponse, null, 2),
-      ); // let storedDeltaToken: string = syncResponse.syncDeletedToken;
-
+      ); 
       let storedDeltaToken: string = syncResponse.syncUpdatedToken;
 
       let updatedResponse = await this.getUpdatedEmails({
         deltaToken: storedDeltaToken,
-      }); // Log the updated emails response
-
-      console.log(
-        "Updated emails response: ",
-
-        JSON.stringify(updatedResponse, null, 2),
-      );
+      }); 
 
       if (updatedResponse.nextDeltaToken) {
         storedDeltaToken = updatedResponse.nextDeltaToken;

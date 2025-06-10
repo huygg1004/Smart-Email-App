@@ -1,14 +1,6 @@
-import React from 'react';
-import Mail from './mail';
+// src/app/mail/page.tsx
+import MailWrapper from './MailWrapper'
 
-const MailDashboard = () => {
-  return (
-    <Mail 
-      defaultLayout={[20, 32, 48]} 
-      defaultCollapsed={false} 
-      navCollapsedSize={4} 
-    />
-  );
-};
-
-export default MailDashboard;
+export default function MailDashboard() {
+  return <MailWrapper />
+}

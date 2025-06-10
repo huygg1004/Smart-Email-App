@@ -24,12 +24,8 @@ export const GET = async (req: NextRequest) => {
 
   try {
     console.log("Aurinko code received:", code);
-
     const token = await exchangeCodeForAccessToken(code);
-    console.log("1. Raw token from exchangeCodeForAccessToken:", token); // CRITICAL LOG 1
-    console.log("1a. Extracted accountId from token:", token.accountId); // CRITICAL LOG 1a
     const accountDetails = await getAccountDetails(token.accessToken);
-    console.log("2. Account details from getAccountDetails:", accountDetails); // Helpful for verification
 
     // Save or update in DB
     await db.account.upsert({
@@ -59,9 +55,7 @@ export const GET = async (req: NextRequest) => {
     console.log(
       "Insert/update account completed! now calling initial-sync api",
     );
-        // CRITICAL LOG 4: Confirm the accountId being sent to initial-sync
     const accountIdToSend = token.accountId.toString();
-    console.log("4. accountId being sent to /api/initial-sync:", accountIdToSend);
 
     waitUntil(
       axios
