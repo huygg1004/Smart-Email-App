@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import AccountSwitcher from "./account-switcher";
 import SideBar from "./sidebar";
 import ThreadList from "./thread-list";
+import ThreadDisplay from "./thread-display";
 
 type Props = {
   defaultLayout?: number[];
@@ -116,7 +117,8 @@ const Mail = ({
 
         {/* Right Panel: Thread Display */}
         <ResizablePanel defaultSize={defaultLayout[2]} minSize={30}>
-          <div className="px-4 py-2">Thread Display</div>
+          {/* <div className="px-4 py-2">Thread Display</div> */}
+          <ThreadDisplay/>
         </ResizablePanel>
       </ResizablePanelGroup>
     </TooltipProvider>
