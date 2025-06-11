@@ -133,4 +133,113 @@ export const accountRouter = createTRPCRouter({
         },
       });
     }),
+
+  getSuggestions: privateProcedure
+    .input(
+      z.object({
+        accountId: z.string(),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const account = await authoriseAccountAccess(
+        input.accountId,
+        ctx.auth.userId,
+      );
+
+      return await ctx.db.emailAddress.findMany({
+        where: {
+          accountId: account.id,
+        },
+        select: {
+          address: true,
+          name: true,
+        },
+      });
+    }),
+
+  getReplyDetails: privateProcedure
+    .input(
+      z.object({
+        accountId: z.string(),
+        threadId: z.string(),
+        replyType: z.enum(["reply", "replyAll"]),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const account = await authoriseAccountAccess(
+        input.accountId,
+        ctx.auth.userId,
+      );
+
+      const thread = await ctx.db.thread.findUnique({
+        where: { id: input.threadId },
+        include: {
+          emails: {
+            orderBy: { sentAt: "asc" },
+            select: {
+              from: true,
+              to: true,
+              cc: true,
+              bcc: true,
+              sentAt: true,
+              subject: true,
+              internetMessageId: true,
+            },
+          },
+        },
+      });
+
+      if (!thread || thread.emails.length === 0) {
+        throw new Error("Thread not found or empty");
+      }
+
+      const lastExternalEmail = [...thread.emails]
+        .reverse()
+        .find((email) => email.from.id !== account.id);
+
+      if (!lastExternalEmail) {
+        throw new Error("No external email found in thread");
+      }
+
+      const format = (people: { name: string | null; address: string }[]) =>
+        people
+          .filter((p) => p.address !== account.emailAddress) // exclude sender
+          .map((p) => ({
+            label: p.name ?? p.address,
+            value: p.address,
+          }));
+
+      if (input.replyType === "reply") {
+        return {
+          to: format([
+            {
+              name: lastExternalEmail.from.name,
+              address: lastExternalEmail.from.address,
+            },
+          ]),
+          cc: [],
+          subject: lastExternalEmail.subject,
+          id: lastExternalEmail.internetMessageId,
+        };
+      } else if (input.replyType === "replyAll") {
+        return {
+          to: format([
+            {
+              name: lastExternalEmail.from.name,
+              address: lastExternalEmail.from.address,
+            },
+            ...lastExternalEmail.to
+              .filter((addr) => addr.id !== account.id)
+              .map((addr) => ({ name: addr.name, address: addr.address })),
+          ]),
+          cc: format(
+            lastExternalEmail.cc
+              .filter((addr) => addr.id !== account.id)
+              .map((addr) => ({ name: addr.name, address: addr.address })),
+          ),
+          subject: lastExternalEmail.subject,
+          id: lastExternalEmail.internetMessageId,
+        };
+      }
+    }),
 });

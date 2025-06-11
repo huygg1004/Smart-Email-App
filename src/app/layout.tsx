@@ -1,3 +1,6 @@
+// app/layout.tsx
+// REMOVED: "use client";
+
 import "@/styles/globals.css";
 
 import { type Metadata } from "next";
@@ -7,6 +10,8 @@ import { TRPCReactProvider } from "@/trpc/react";
 import { ThemeProvider } from "@/components/theme-provider";
 
 import { ClerkProvider } from "@clerk/nextjs";
+import KBar from "@/components/kbar";
+import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
   title: "Create T3 App",
@@ -21,18 +26,22 @@ const geist = Geist({
 
 export default function RootLayout({
   children,
-}: Readonly<{ children: React.ReactNode }>) {
+}: Readonly<{ children: ReactNode }>) {
   return (
     <ClerkProvider>
-      <html lang="en" className={geist.variable} suppressHydrationWarning>
-        <body>
+      <html lang="en" className={`${geist.variable} h-full`} suppressHydrationWarning>
+        <body className="h-full overflow-hidden">
           <ThemeProvider
             attribute="class"
             defaultTheme="system"
             enableSystem
             disableTransitionOnChange
           >
-            <TRPCReactProvider>{children}</TRPCReactProvider>
+            <TRPCReactProvider>
+              {/* KBar does not accept className. The `children` prop will be your actual layout component. */}
+              {/* That layout component needs to define its height (e.g., h-full or h-screen) */}
+              <KBar>{children}</KBar>
+            </TRPCReactProvider>
           </ThemeProvider>
         </body>
       </html>
