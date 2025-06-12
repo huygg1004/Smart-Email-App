@@ -1,13 +1,10 @@
-/* File: src/server/api/routers/account.ts 
-  - This file is unchanged from the last version.
-  - The `composeEmail` procedure includes essential error logging.
-  - If sending fails, check your server console logs for the "FAILED TO SEND EMAIL VIA PROVIDER" error.
-*/
+/* File: src/server/api/routers/account.ts */
 import { createTRPCRouter, privateProcedure } from "../trpc";
 import { z } from "zod";
 import { db } from "@/server/db";
 import { Prisma } from "@prisma/client";
 import { Account } from "@/lib/account";
+import { OramaClient } from "@/lib/orama";
 
 export const emailAddressSchema = z.object({
   name: z.string(),
@@ -18,11 +15,10 @@ export const authoriseAccountAccess = async (
   accountId: string,
   userId: string,
 ) => {
-  console.log("authoriseAccountAccess called with:", { accountId, userId });
   const account = await db.account.findFirst({
     where: {
       id: accountId,
-      // userId, // Temporarily commented out for debugging if needed, but should be enabled
+      userId,
     },
     select: {
       id: true,
@@ -36,9 +32,31 @@ export const authoriseAccountAccess = async (
 };
 
 export const accountRouter = createTRPCRouter({
+  searchEmails: privateProcedure
+    .input(z.object({ accountId: z.string(), query: z.string() }))
+    .query(async ({ ctx, input }) => {
+      // ✅ THE FIX IS HERE
+      if (input.query.trim().length < 2) {
+        // Ensure the return shape is consistent
+        return { hits: [], count: 0 }; 
+      }
+      
+      await authoriseAccountAccess(input.accountId, ctx.auth.userId);
+      console.log(`[searchEmails] Initializing Orama for account ${input.accountId}`);
+      const orama = new OramaClient(input.accountId);
+      await orama.initialize();
+
+      console.log(`[searchEmails] Searching for query: "${input.query}"`);
+      const results = await orama.search(input.query);
+
+      console.log(`[searchEmails] Found ${results.count} hits.`);
+      return results;
+    }),
+
   getById: privateProcedure
     .input(z.object({ id: z.string() }))
     .query(async ({ ctx, input }) => {
+      // ... (rest of the file is unchanged)
       const account = await ctx.db.account.findUnique({
         where: { id: input.id },
         select: { id: true, emailAddress: true, name: true },
@@ -67,11 +85,7 @@ export const accountRouter = createTRPCRouter({
         input.accountId,
         ctx.auth.userId,
       );
-
       const emailClient = new Account(account.accessToken);
-
-      console.log("[composeEmail] Attempting to send new email:", input);
-
       try {
         await emailClient.sendEmail({
           body: input.body,
@@ -82,7 +96,6 @@ export const accountRouter = createTRPCRouter({
           from: input.from,
           replyTo: input.replyTo,
         });
-        console.log("[composeEmail] Successfully sent new email.");
         return { success: true, message: "Email composed and sent successfully." };
       } catch (error) {
         console.error("❌ [composeEmail] FAILED TO SEND EMAIL VIA PROVIDER:", error);
@@ -110,11 +123,8 @@ export const accountRouter = createTRPCRouter({
         input.accountId,
         ctx.auth.userId,
       );
-      
       const emailClient = new Account(account.accessToken);
-      console.log("[sendEmail] Attempting to send reply/threaded email:", input);
-
-       try {
+      try {
         await emailClient.sendEmail({
           body: input.body,
           subject: input.subject,
@@ -126,7 +136,6 @@ export const accountRouter = createTRPCRouter({
           from: input.from,
           inReplyTo: input.inReplyTo,
         });
-        console.log("[sendEmail] Successfully sent reply/threaded email.");
         return { success: true, message: "Email sent successfully." };
       } catch (error) {
         console.error("❌ [sendEmail] FAILED TO SEND EMAIL VIA PROVIDER:", error);
@@ -140,7 +149,9 @@ export const accountRouter = createTRPCRouter({
       select: { id: true, emailAddress: true, name: true, },
     });
   }),
-  getAccountIdByUser: privateProcedure.query(async ({ ctx }) => {
+
+  getAccountIdByUser: privateProcedure.query(async ({
+    ctx }) => {
     const userId = ctx.auth.userId;
     const account = await ctx.db.account.findFirst({
       where: { userId },
@@ -149,6 +160,7 @@ export const accountRouter = createTRPCRouter({
     if (!account) throw new Error("Account not found");
     return account.id;
   }),
+  
   getNumThreads: privateProcedure.input(z.object({ accountId: z.string(), tab: z.string(), })).query(async ({ ctx, input }) => {
     const account = await authoriseAccountAccess(input.accountId, ctx.auth.userId,);
     let filter: Prisma.ThreadWhereInput = {};
@@ -157,19 +169,19 @@ export const accountRouter = createTRPCRouter({
     else if (input.tab === "sent") { filter.sentStatus = true; }
     return await ctx.db.thread.count({ where: { accountId: account.id, ...filter, }, });
   }),
+
   getThreads: privateProcedure.input(z.object({ accountId: z.string(), tab: z.string(), done: z.boolean(), })).query(async ({ ctx, input }) => {
     const account = await authoriseAccountAccess(input.accountId, ctx.auth.userId,);
     const acc = new Account(account.accessToken)
     acc.syncEmails().catch(console.error)
     
-
     let filter: Prisma.ThreadWhereInput = {};
     if (input.tab === "inbox") { filter.inboxStatus = true; } 
     else if (input.tab === "draft") { filter.draftStatus = true; } 
     else if (input.tab === "sent") { filter.sentStatus = true; }
     filter.done = { equals: input.done, };
     return await ctx.db.thread.findMany({
-      where: filter,
+      where: { accountId: account.id, ...filter },
       include: {
         emails: {
           orderBy: { sentAt: "asc", },
@@ -180,6 +192,7 @@ export const accountRouter = createTRPCRouter({
       orderBy: { lastMessageDate: "desc", },
     });
   }),
+
   getSuggestions: privateProcedure.input(z.object({ accountId: z.string(), })).query(async ({ ctx, input }) => {
     const account = await authoriseAccountAccess(input.accountId, ctx.auth.userId,);
     return await ctx.db.emailAddress.findMany({
@@ -187,6 +200,7 @@ export const accountRouter = createTRPCRouter({
       select: { address: true, name: true, },
     });
   }),
+
   getReplyDetails: privateProcedure.input(z.object({ accountId: z.string(), threadId: z.string(), replyType: z.enum(["reply", "replyAll"]), })).query(async ({ ctx, input }) => {
     const account = await authoriseAccountAccess(input.accountId, ctx.auth.userId,);
     const thread = await ctx.db.thread.findUnique({
@@ -199,16 +213,16 @@ export const accountRouter = createTRPCRouter({
       },
     });
     if (!thread || thread.emails.length === 0) { throw new Error("Thread not found or empty"); }
-    const lastExternalEmail = [...thread.emails].reverse().find((email) => email.from.id !== account.id);
+    const lastExternalEmail = [...thread.emails].reverse().find((email) => email.from.address !== account.emailAddress);
     if (!lastExternalEmail) { throw new Error("No external email found in thread"); }
     const format = (people: { name: string | null; address: string }[]) => people.filter((p) => p.address !== account.emailAddress).map((p) => ({ label: p.name ?? p.address, value: p.address, }));
     if (input.replyType === "reply") {
-      return { to: format([{ name: lastExternalEmail.from.name, address: lastExternalEmail.from.address, }, ]), cc: [], subject: lastExternalEmail.subject, id: lastExternalEmail.internetMessageId, };
+      return { to: format([{ name: lastExternalEmail.from.name, address: lastExternalEmail.from.address, }, ]), cc: [], subject: lastExternalEmail.subject ?? 'No Subject', id: lastExternalEmail.internetMessageId, };
     } else if (input.replyType === "replyAll") {
       return {
-        to: format([{ name: lastExternalEmail.from.name, address: lastExternalEmail.from.address, }, ...lastExternalEmail.to.filter((addr) => addr.id !== account.id).map((addr) => ({ name: addr.name, address: addr.address })), ]),
-        cc: format(lastExternalEmail.cc.filter((addr) => addr.id !== account.id).map((addr) => ({ name: addr.name, address: addr.address }))),
-        subject: lastExternalEmail.subject,
+        to: format([{ name: lastExternalEmail.from.name, address: lastExternalEmail.from.address, }, ...lastExternalEmail.to.filter((addr) => addr.address !== account.emailAddress).map((addr) => ({ name: addr.name, address: addr.address })), ]),
+        cc: format(lastExternalEmail.cc.filter((addr) => addr.address !== account.emailAddress).map((addr) => ({ name: addr.name, address: addr.address }))),
+        subject: lastExternalEmail.subject ?? 'No Subject',
         id: lastExternalEmail.internetMessageId,
       };
     }

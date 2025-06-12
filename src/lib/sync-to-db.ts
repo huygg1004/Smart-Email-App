@@ -1,20 +1,24 @@
+/* File: src/server/lib/sync-emails-to-database.ts */
 import { db } from "@/server/db";
 import type {
   EmailMessage,
   EmailAddress,
   EmailAttachment,
-  EmailHeader,
 } from "@/types";
-import type { Email } from "@prisma/client";
-import pLimit from "p-limit";
 import { OramaClient } from "./orama";
-import { m } from "framer-motion";
-import { restore } from '@orama/plugin-data-persistence';
+import { Prisma } from "@prisma/client";
 
+/**
+ * Main function to synchronize a batch of emails from a provider to the local database and search index.
+ * @param emails - An array of email messages to be synced.
+ * @param accountId - The ID of the account these emails belong to.
+ */
 export async function syncEmailsToDatabase(
   emails: EmailMessage[],
   accountId: string,
 ) {
+  // 1. Initialize the Orama client for the specific account.
+  // This will either create a new index or restore the existing one from the database.
   const orama = new OramaClient(accountId);
   await orama.initialize();
 
@@ -22,113 +26,107 @@ export async function syncEmailsToDatabase(
 
   try {
     for (const email of emails) {
-      // Insert into Orama search index
+      // 2. For each email, upsert its data into the relational database (Prisma).
+      await upsertEmail(email, accountId);
+
+      // 3. Concurrently, insert a structured document for the email into the in-memory Orama index.
       await orama.insert({
+        id: email.id, // Pass the email's unique ID for idempotent inserts
         subject: email.subject || '',
         body: email.body || '',
         rawBody: email.bodySnippet || '',
         from: email.from?.address || '',
         to: email.to?.map(to => to.address) || [],
-        sentAt: email.sentAt?.toLocaleString() || new Date().toISOString(),
+        sentAt: email.sentAt,
         threadId: email.threadId || ''
       });
-
-      // Insert into database
-      await upsertEmail(email, accountId, 0);
     }
-    console.log('Email sync completed successfully');
+
+    // 4. ✅ CRITICAL FIX: After processing all emails in the batch, persist the updated
+    // in-memory Orama index back to the database.
+    await orama.saveIndex();
+
+    console.log(`Email sync and index persistence completed successfully for ${emails.length} emails.`);
   } catch (error) {
-    console.error("Error syncing emails:", error);
+    console.error("Error during the email sync process:", error);
+    // Depending on requirements, you might want to re-throw or handle it.
     throw error;
   }
 }
 
+/**
+ * Upserts a single email message and its related data (addresses, thread, etc.) into the database.
+ * @param email - The email message object.
+ * @param accountId - The ID of the parent account.
+ */
 async function upsertEmail(
   email: EmailMessage,
   accountId: string,
-  index: number,
 ) {
-
   try {
     let emailLabelType: "inbox" | "sent" | "draft" = "inbox";
 
-    if (
-      email.sysLabels.includes("inbox") ||
-      email.sysLabels.includes("important")
-    ) {
-      emailLabelType = "inbox";
-    } else if (email.sysLabels.includes("sent")) {
+    if (email.sysLabels.includes("sent")) {
       emailLabelType = "sent";
     } else if (email.sysLabels.includes("draft")) {
       emailLabelType = "draft";
     }
 
-    // 1. Upserting EmailAddress records
-
-    const addressesToUpsert = new Map();
-    for (const address of [
+    // 1. Collect all unique email addresses from the email to avoid redundant DB operations.
+    const addressesToUpsert = new Map<string, EmailAddress>();
+    const allRawAddresses = [
       email.from,
-      ...email.to,
-      ...email.cc,
-      ...email.bcc,
-      ...email.replyTo,
-    ]) {
-      addressesToUpsert.set(address.address, address);
+      ...(email.to ?? []),
+      ...(email.cc ?? []),
+      ...(email.bcc ?? []),
+      ...(email.replyTo ?? []),
+    ];
+
+    for (const address of allRawAddresses) {
+      if (address?.address) {
+        addressesToUpsert.set(address.address, address);
+      }
     }
 
-    const upsertedAddresses: (Awaited<
-      ReturnType<typeof upsertEmailAddress>
-    > | null)[] = [];
-
-    for (const address of addressesToUpsert.values()) {
-      const upsertedAddress = await upsertEmailAddress(address, accountId);
-      upsertedAddresses.push(upsertedAddress);
-    }
+    // Upsert all unique addresses and create a map of `address string -> DB record`.
+    const upsertedAddresses = await Promise.all(
+      Array.from(addressesToUpsert.values()).map(addr => upsertEmailAddress(addr, accountId))
+    );
 
     const addressMap = new Map(
       upsertedAddresses
         .filter(Boolean)
-        .map((address) => [address!.address, address]),
+        .map((address) => [address!.address, address!]),
     );
 
     const fromAddress = addressMap.get(email.from.address);
-
     if (!fromAddress) {
-      console.log(
-        `Failed to upsert from address for email ${email.bodySnippet}`,
-      );
+      console.warn(`Could not find or create 'from' address for email ID ${email.id}. Skipping.`);
       return;
     }
 
-    const toAddresses = email.to
-      .map((addr) => addressMap.get(addr.address))
-      .filter(Boolean);
-    const ccAddresses = email.cc
-      .map((addr) => addressMap.get(addr.address))
-      .filter(Boolean);
-    const bccAddresses = email.bcc
-      .map((addr) => addressMap.get(addr.address))
-      .filter(Boolean);
-    const replyToAddresses = email.replyTo
-      .map((addr) => addressMap.get(addr.address))
-      .filter(Boolean);
+    // Map relation IDs
+    const toAddresses = (email.to ?? []).map((addr) => addressMap.get(addr.address)).filter(Boolean);
+    const ccAddresses = (email.cc ?? []).map((addr) => addressMap.get(addr.address)).filter(Boolean);
+    const bccAddresses = (email.bcc ?? []).map((addr) => addressMap.get(addr.address)).filter(Boolean);
+    const replyToAddresses = (email.replyTo ?? []).map((addr) => addressMap.get(addr.address)).filter(Boolean);
 
-    // 2. Upserting Threads:
+    // 2. Upsert the Thread
+    const threadParticipantIds = [
+      ...new Set([
+        fromAddress.id,
+        ...toAddresses.map((a) => a!.id),
+        ...ccAddresses.map((a) => a!.id),
+        ...bccAddresses.map((a) => a!.id),
+      ]),
+    ];
+
     const thread = await db.thread.upsert({
       where: { id: email.threadId },
       update: {
         subject: email.subject,
-        accountId,
         lastMessageDate: new Date(email.sentAt),
-        done: false,
-        participantIds: [
-          ...new Set([
-            fromAddress.id,
-            ...toAddresses.map((a) => a!.id),
-            ...ccAddresses.map((a) => a!.id),
-            ...bccAddresses.map((a) => a!.id),
-          ]),
-        ],
+        participantIds: threadParticipantIds,
       },
       create: {
         id: email.threadId,
@@ -139,49 +137,26 @@ async function upsertEmail(
         inboxStatus: emailLabelType === "inbox",
         sentStatus: emailLabelType === "sent",
         lastMessageDate: new Date(email.sentAt),
-        participantIds: [
-          ...new Set([
-            fromAddress.id,
-            ...toAddresses.map((a) => a!.id),
-            ...ccAddresses.map((a) => a!.id),
-            ...bccAddresses.map((a) => a!.id),
-          ]),
-        ],
+        participantIds: threadParticipantIds,
       },
     });
 
-    // 3. Upsert Email:
+    // 3. Upsert the Email itself
     await db.email.upsert({
       where: { id: email.id },
       update: {
-        threadId: thread.id,
-        createdTime: new Date(email.createdTime),
+        // Fields that can change
         lastModifiedTime: new Date(),
-        sentAt: new Date(email.sentAt),
-        receivedAt: new Date(email.receivedAt),
-        internetMessageId: email.internetMessageId,
-        subject: email.subject,
         sysLabels: email.sysLabels,
         keywords: email.keywords,
-        sysClassifications: email.sysClassifications,
-        sensitivity: email.sensitivity,
-        meetingMessageMethod: email.meetingMessageMethod,
-        fromId: fromAddress.id,
+        hasAttachments: email.hasAttachments,
+        body: email.body,
+        bodySnippet: email.bodySnippet,
+        // Relations
         to: { set: toAddresses.map((a) => ({ id: a!.id })) },
         cc: { set: ccAddresses.map((a) => ({ id: a!.id })) },
         bcc: { set: bccAddresses.map((a) => ({ id: a!.id })) },
         replyTo: { set: replyToAddresses.map((a) => ({ id: a!.id })) },
-        hasAttachments: email.hasAttachments,
-        internetHeaders: email.internetHeaders as any,
-        body: email.body,
-        bodySnippet: email.bodySnippet,
-        inReplyTo: email.inReplyTo,
-        references: email.references,
-        threadIndex: email.threadIndex,
-        nativeProperties: email.nativeProperties as any,
-        folderId: email.folderId,
-        omitted: email.omitted,
-        emailLabel: emailLabelType,
       },
       create: {
         id: email.id,
@@ -194,95 +169,70 @@ async function upsertEmail(
         internetMessageId: email.internetMessageId,
         subject: email.subject,
         sysLabels: email.sysLabels,
-        internetHeaders: email.internetHeaders as any,
+        internetHeaders: (email.internetHeaders as any) ?? Prisma.JsonNull,
         keywords: email.keywords,
-        sysClassifications: email.sysClassifications,
-        sensitivity: email.sensitivity,
-        meetingMessageMethod: email.meetingMessageMethod,
         fromId: fromAddress.id,
+        hasAttachments: email.hasAttachments,
+        body: email.body,
+        bodySnippet: email.bodySnippet,
+        // Connect relations
         to: { connect: toAddresses.map((a) => ({ id: a!.id })) },
         cc: { connect: ccAddresses.map((a) => ({ id: a!.id })) },
         bcc: { connect: bccAddresses.map((a) => ({ id: a!.id })) },
         replyTo: { connect: replyToAddresses.map((a) => ({ id: a!.id })) },
-        hasAttachments: email.hasAttachments,
-        body: email.body,
-        bodySnippet: email.bodySnippet,
-        inReplyTo: email.inReplyTo,
-        references: email.references,
-        threadIndex: email.threadIndex,
-        nativeProperties: email.nativeProperties as any,
-        folderId: email.folderId,
-        omitted: email.omitted,
       },
     });
 
-    const threadEmails = await db.email.findMany({
-      where: { threadId: thread.id },
-      orderBy: { receivedAt: "asc" },
-    });
-
-    let threadFolderType = "sent";
-    for (const threadEmail of threadEmails) {
-      if (threadEmail.emailLabel === "inbox") {
-        threadFolderType = "inbox";
-        break;
-      } else if (threadEmail.emailLabel === "draft") {
-        threadFolderType = "draft";
-      }
+    // 4. Upsert any Attachments
+    if (email.attachments && email.attachments.length > 0) {
+      await Promise.all(
+          email.attachments.map(attachment => upsertAttachment(email.id, attachment))
+      );
     }
 
-    await db.thread.update({
-      where: { id: thread.id },
-      data: {
-        draftStatus: threadFolderType === "draft",
-        inboxStatus: threadFolderType === "inbox",
-        sentStatus: threadFolderType === "sent",
-      },
-    });
-
-    // 4. Upsert Attachments
-    for (const attachment of email.attachments) {
-      await upsertAttachment(email.id, attachment);
-    }
   } catch (error) {
     console.error(
-      `Error upserting email ${index + 1} (ID: ${email.id}) for account ${accountId}:`,
+      `Error upserting email (ID: ${email.id}) for account ${accountId}:`,
       error,
     );
   }
 }
 
+/**
+ * Finds an existing EmailAddress or creates a new one.
+ * @param address - The address object.
+ * @param accountId - The ID of the parent account.
+ */
 async function upsertEmailAddress(address: EmailAddress, accountId: string) {
   try {
-    const existingAddress = await db.emailAddress.findUnique({
+    return await db.emailAddress.upsert({
       where: {
         accountId_address: {
-          accountId: accountId,
-          address: address.address ?? "",
+          accountId,
+          address: address.address,
         },
       },
+      update: {
+        name: address.name,
+      },
+      create: {
+        address: address.address,
+        name: address.name,
+        raw: address.raw,
+        accountId,
+      },
     });
-
-    if (existingAddress) {
-      return await db.emailAddress.findUnique({
-        where: { id: existingAddress.id },
-      });
-    } else {
-      return await db.emailAddress.create({
-        data: {
-          address: address.address ?? "",
-          name: address.name,
-          raw: address.raw,
-          accountId,
-        },
-      });
-    }
   } catch (error) {
-    console.error(`Failed to upsert email address: ${error}`);
+    console.error(`Failed to upsert email address '${address.address}':`, error);
     throw error;
   }
 }
 
+/**
+ * Upserts an email attachment record.
+ * @param emailId - The ID of the parent email.
+ * @param attachment - The attachment object.
+ */
 async function upsertAttachment(emailId: string, attachment: EmailAttachment) {
   try {
     await db.emailAttachment.upsert({
@@ -293,8 +243,6 @@ async function upsertAttachment(emailId: string, attachment: EmailAttachment) {
         size: attachment.size,
         inline: attachment.inline,
         contentId: attachment.contentId,
-        content: attachment.content,
-        contentLocation: attachment.contentLocation,
       },
       create: {
         id: attachment.id,
@@ -304,11 +252,11 @@ async function upsertAttachment(emailId: string, attachment: EmailAttachment) {
         size: attachment.size,
         inline: attachment.inline,
         contentId: attachment.contentId,
-        content: attachment.content,
-        contentLocation: attachment.contentLocation,
+        // Note: 'content' is often too large for a DB record and should be stored in blob storage.
+        // content: attachment.content,
       },
     });
   } catch (error) {
-    console.log(`Failed to upsert attachment for email ${emailId}: ${error}`);
+    console.log(`Failed to upsert attachment for email ${emailId}:`, error);
   }
 }
