@@ -128,7 +128,7 @@ export class OramaClient {
         from: (document.from?.address || document.from || '').toString(),
         //@ts-ignore
         to: Array.isArray(document.to) ? document.to.map(t => (t.address || t).toString()) : [],
-        sentAt: document.sentAt?.toISOString() || new Date().toISOString(),
+        sentAt: document.sentAt?.toLocaleString() || new Date().toLocaleString(),
         threadId: (document.threadId || '').toString(),
       };
       await insert(this.orama, validatedDoc);
