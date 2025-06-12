@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import LinkAccountButton from "@/components/link-account-button";
 import AboutMeModal from "@/components/AboutMeModal";
+import PrivacyModal from "@/components/PrivacyModal";
 
 export default async function Home() {
   return (
@@ -37,6 +38,7 @@ export default async function Home() {
       {/* Footer */}
       <footer className="mt-20 flex flex-col items-center text-sm text-gray-500">
         <AboutMeModal />
+        <PrivacyModal />
         <span className="mt-4">
           &copy; {new Date().getFullYear()} Huy Doan. All rights reserved.
         </span>
