@@ -18,6 +18,7 @@ import ThreadList from "./thread-list";
 import ThreadDisplay from "./thread-display";
 import SearchBar, { isSearchingAtom } from "./search-bar";
 import SearchDisplay from "./search-display";
+import AIChatbot from "@/app/mail/ask-ai";
 
 type Props = {
   defaultLayout?: number[];
@@ -54,18 +55,25 @@ const Mail = ({
             isCollapsed && "min-w-[50px]",
           )}
         >
-          <div className="flex h-full flex-1 flex-col">
-            <div
-              className={cn(
-                "flex h-[52px] items-center justify-center",
-                !isCollapsed && "px-2",
-              )}
-            >
-              <AccountSwitcher isCollapsed={isCollapsed} />
-            </div>
-            <Separator />
-            <SideBar isCollapsed={isCollapsed} />
-          </div>
+<div className="flex h-full flex-1 flex-col">
+  <div>
+    <div
+      className={cn(
+        "flex h-[52px] items-center justify-center",
+        !isCollapsed && "px-2",
+      )}
+    >
+      <AccountSwitcher isCollapsed={isCollapsed} />
+    </div>
+    <Separator />
+    <SideBar isCollapsed={isCollapsed} />
+  </div>
+
+  {/* Spacer to push chatbot toward middle */}
+  <div className="flex-1 flex items-center justify-center">
+    <AIChatbot />
+  </div>
+</div>
         </ResizablePanel>
 
         <ResizableHandle withHandle />
@@ -79,20 +87,32 @@ const Mail = ({
             {isSearching ? (
               <SearchDisplay />
             ) : (
-              <Tabs defaultValue="inbox" className="flex h-full w-full flex-col">
+              <Tabs
+                defaultValue="inbox"
+                className="flex h-full w-full flex-col"
+              >
                 <div className="flex items-center px-4 py-2">
                   <h1 className="text-xl font-bold">Inbox</h1>
                   <TabsList className="ml-auto">
-                    <TabsTrigger value="inbox" className="text-zinc-600 dark:text-zinc-200">
+                    <TabsTrigger
+                      value="inbox"
+                      className="text-zinc-600 dark:text-zinc-200"
+                    >
                       Inbox
                     </TabsTrigger>
-                    <TabsTrigger value="done" className="text-zinc-600 dark:text-zinc-200">
+                    <TabsTrigger
+                      value="done"
+                      className="text-zinc-600 dark:text-zinc-200"
+                    >
                       Done
                     </TabsTrigger>
                   </TabsList>
                 </div>
                 <Separator />
-                <TabsContent value="inbox" className="flex-grow overflow-y-auto">
+                <TabsContent
+                  value="inbox"
+                  className="flex-grow overflow-y-auto"
+                >
                   <ThreadList />
                 </TabsContent>
                 <TabsContent value="done" className="flex-grow overflow-y-auto">

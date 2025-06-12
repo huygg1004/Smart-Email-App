@@ -5,7 +5,7 @@ import OpenAI from "openai";
 
 const openai = new OpenAI({
   // Change: Use environment variable for API key
-  apiKey: 'nonenone' // Use environment variable instead of hardcoded key
+  apiKey: process.env.OPENAI_API_KEY // Use environment variable instead of hardcoded key
 });
 
 export async function generateEmail(context: string, prompt: string) {

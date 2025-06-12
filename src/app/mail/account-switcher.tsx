@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { Plus } from "lucide-react";
-import { getAurinkoAuthUrl } from "@/lib/aurinko";
 
 type Props = {
   isCollapsed: boolean;
@@ -22,7 +21,6 @@ const AccountSwitcher = ({ isCollapsed }: Props) => {
   const [accountIdStorage, setAccountIdStorage] = useLocalStorage("accountId", "");
   const [accountId, setAccountId] = React.useState(accountIdStorage);
 
-  // Initialize selected account on first load
   React.useEffect(() => {
     if (data?.length && !accountIdStorage) {
       const firstAccount = data[0];
@@ -35,7 +33,6 @@ const AccountSwitcher = ({ isCollapsed }: Props) => {
     }
   }, [data, accountIdStorage, setAccountIdStorage]);
 
-  // Don't render if no data
   if (!data || data.length === 0) return null;
 
   const selectedAccount = data.find((account) => account.id === accountId) ?? data[0];
@@ -72,12 +69,11 @@ const AccountSwitcher = ({ isCollapsed }: Props) => {
             {account.emailAddress}
           </SelectItem>
         ))}
+
+        {/* Disabled "Add Account" option */}
         <div
-          onClick={async () => {
-            const authUrl = await getAurinkoAuthUrl("Google");
-            window.location.href = authUrl;
-          }}
-          className="focus:bg-accent focus:text-accent-foreground relative flex w-full cursor-pointer items-center rounded-sm py-1.5 pr-8 pl-2 text-sm outline-none hover:bg-gray-50 data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
+          data-disabled
+          className="relative flex w-full items-center rounded-sm py-1.5 pr-8 pl-2 text-sm opacity-50 cursor-not-allowed"
         >
           <Plus className="mr-1 size-4" />
           Add Account

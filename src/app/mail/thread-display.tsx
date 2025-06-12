@@ -31,8 +31,8 @@ const ThreadDisplay = () => {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex flex-shrink-0 items-center justify-between p-2">
-        <div className="flex items-center gap-2">
+      {/* <div className="flex flex-shrink-0 items-center justify-between p-2"> */}
+        {/* <div className="flex items-center gap-2">
           <Button variant="ghost" size="icon" disabled={!thread}>
             <Archive className="size-4" />
           </Button>
@@ -46,9 +46,9 @@ const ThreadDisplay = () => {
           <Button variant="ghost" size="icon" disabled={!thread}>
             <Clock className="size-4" />
           </Button>
-        </div>
+        </div> */}
 
-        <DropdownMenu>
+        {/* <DropdownMenu>
           <DropdownMenuTrigger asChild disabled={!thread}>
             <Button variant="ghost" size="icon" className="ml-2">
               <MoreVertical className="size-4" />
@@ -65,9 +65,9 @@ const ThreadDisplay = () => {
               <DropdownMenuItem>Mute Thread</DropdownMenuItem>
             </DropdownMenuContent>
           )}
-        </DropdownMenu>
-      </div>
-      <Separator className="flex-shrink-0" />
+        </DropdownMenu> */}
+      {/* </div> */}
+      {/* <Separator className="flex-shrink-0" /> */}
 
       {showLoading ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center">

@@ -150,3 +150,12 @@ enum MeetingMessageMethod {
     counter
     other
 }
+
+model ChatbotInteraction {
+  id     String   @id @default(cuid())
+  userId String
+  day    String   // You’re using `toDateString()`, which returns a string like "Mon Jun 12 2025"
+  count  Int      @default(0)
+
+  @@unique([userId, day])
+}
