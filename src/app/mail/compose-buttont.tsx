@@ -1,6 +1,3 @@
-/* File: src/components/ComposeButton.tsx
-  - This file is unchanged and correctly calls the `composeEmail` mutation.
-*/
 "use client";
 import React, { useState } from "react";
 import { Pencil } from "lucide-react";
@@ -15,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import EmailEditor from "./email-editor";
 import { api } from "@/trpc/react";
 import useThreads from "@/hooks/use-threads";
-import { toast } from "react-hot-toast";
+import { toast } from "sonner"; // ✅ Using `sonner`
 
 type Recipient = {
   label: string;
@@ -29,7 +26,7 @@ const ComposeButton = () => {
   const [isOpen, setIsOpen] = useState(false);
 
   const { accountId } = useThreads();
-  
+
   const composeEmailMutation = api.account.composeEmail.useMutation();
 
   const { data: account } = api.account.getById.useQuery(
@@ -85,18 +82,18 @@ const ComposeButton = () => {
     console.log("✅ Sending payload to `composeEmail`:", emailData);
 
     composeEmailMutation.mutate(emailData, {
-        onSuccess: (data) => {
-            console.log("✅ Email sent successfully!", data);
-            toast.success(data.message || "Email sent successfully!");
-            setSubject("");
-            setToValues([]);
-            setCcValues([]);
-            setIsOpen(false);
-        },
-        onError: (error) => {
-            console.error("❌ Error sending email:", error);
-            toast.error(`Failed to send email: ${error.message}`);
-        }
+      onSuccess: (data) => {
+        console.log("✅ Email sent successfully!", data);
+        toast.success(data.message || "Email sent successfully!");
+        setSubject("");
+        setToValues([]);
+        setCcValues([]);
+        setIsOpen(false);
+      },
+      onError: (error) => {
+        console.error("❌ Error sending email:", error);
+        toast.error(`Failed to send email: ${error.message}`);
+      },
     });
   };
 

@@ -7,21 +7,39 @@ import type {
 } from "@/types";
 import type { Email } from "@prisma/client";
 import pLimit from "p-limit";
+import { OramaClient } from "./orama";
+import { m } from "framer-motion";
+import { restore } from '@orama/plugin-data-persistence';
 
 export async function syncEmailsToDatabase(
   emails: EmailMessage[],
   accountId: string,
 ) {
+  const orama = new OramaClient(accountId);
+  await orama.initialize();
 
-  const limit = pLimit(1);
+  console.log(`Syncing ${emails.length} emails for account ${accountId}`);
 
   try {
-    // Promise.all(emails.map((email, index)=>upsertEmail(email, index, accountId)))
     for (const email of emails) {
+      // Insert into Orama search index
+      await orama.insert({
+        subject: email.subject || '',
+        body: email.body || '',
+        rawBody: email.bodySnippet || '',
+        from: email.from?.address || '',
+        to: email.to?.map(to => to.address) || [],
+        sentAt: email.sentAt?.toLocaleString() || new Date().toISOString(),
+        threadId: email.threadId || ''
+      });
+
+      // Insert into database
       await upsertEmail(email, accountId, 0);
     }
+    console.log('Email sync completed successfully');
   } catch (error) {
-    console.log("Error Message:", error);
+    console.error("Error syncing emails:", error);
+    throw error;
   }
 }
 

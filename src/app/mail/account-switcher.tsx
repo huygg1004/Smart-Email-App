@@ -19,42 +19,66 @@ type Props = {
 
 const AccountSwitcher = ({ isCollapsed }: Props) => {
   const { data } = api.account.getAccounts.useQuery();
-  const [accountId, setAccountId] = useLocalStorage("accountId", "");
+  const [accountIdStorage, setAccountIdStorage] = useLocalStorage("accountId", "");
+  const [accountId, setAccountId] = React.useState(accountIdStorage);
 
-  if (!data) return null;
+  // Initialize selected account on first load
+  React.useEffect(() => {
+    if (data?.length && !accountIdStorage) {
+      const firstAccount = data[0];
+      if (firstAccount) {
+        setAccountId(firstAccount.id);
+        setAccountIdStorage(firstAccount.id);
+      }
+    } else if (accountIdStorage) {
+      setAccountId(accountIdStorage);
+    }
+  }, [data, accountIdStorage, setAccountIdStorage]);
+
+  // Don't render if no data
+  if (!data || data.length === 0) return null;
+
+  const selectedAccount = data.find((account) => account.id === accountId) ?? data[0];
 
   return (
-    <Select defaultValue={accountId} onValueChange={setAccountId}>
+    <Select
+      value={accountId}
+      onValueChange={(value) => {
+        setAccountId(value);
+        setAccountIdStorage(value);
+      }}
+    >
       <SelectTrigger
         className={cn(
           "flex w-full flex-1 items-center gap-2 [&_svg]:h-4 [&_svg]:w-4 [&_svg]:shrink-0 [&>span]:line-clamp-1 [&>span]:flex [&>span]:w-full [&>span]:items-center [&>span]:gap-1 [&>span]:truncate",
           isCollapsed &&
-            "flex h-9 w-9 shrink-0 items-center justify-center p-0 [&>span]:w-auto [&>svg]:hidden",
+            "flex h-9 w-9 shrink-0 items-center justify-center p-0 [&>span]:w-auto [&>svg]:hidden"
         )}
         aria-label="Select account"
       >
         <SelectValue placeholder="Select an account">
           <span className={cn({ hidden: !isCollapsed })}>
-            {data.find((account) => account.id === accountId)?.emailAddress[0]}
+            {selectedAccount?.emailAddress[0]}
           </span>
           <span className={cn({ hidden: isCollapsed, "ml-2": true })}>
-            {data.find((account) => account.id === accountId)?.emailAddress}
+            {selectedAccount?.emailAddress}
           </span>
         </SelectValue>
       </SelectTrigger>
+
       <SelectContent>
-        {data.map((account) => {
-          return (
-            <SelectItem key={account.id} value={account.id}>
-              {account.emailAddress}
-            </SelectItem>
-          );
-        })}
-        <div onClick = {async() => {
-            const authUrl = await getAurinkoAuthUrl('Google')
-            window.location.href = authUrl
-        }}
-         className="focus:bg-accent focus:text-accent-foreground relative flex w-full cursor-pointer items-center rounded-sm py-1.5 pr-8 pl-2 text-sm outline-none hover:bg-gray-50 data-[disabled]:pointer-events-none data-[disabled]:opacity-50">
+        {data.map((account) => (
+          <SelectItem key={account.id} value={account.id}>
+            {account.emailAddress}
+          </SelectItem>
+        ))}
+        <div
+          onClick={async () => {
+            const authUrl = await getAurinkoAuthUrl("Google");
+            window.location.href = authUrl;
+          }}
+          className="focus:bg-accent focus:text-accent-foreground relative flex w-full cursor-pointer items-center rounded-sm py-1.5 pr-8 pl-2 text-sm outline-none hover:bg-gray-50 data-[disabled]:pointer-events-none data-[disabled]:opacity-50"
+        >
           <Plus className="mr-1 size-4" />
           Add Account
         </div>

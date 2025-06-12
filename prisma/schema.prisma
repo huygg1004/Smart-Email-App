@@ -27,6 +27,7 @@ model Account {
     emailAddress String
     name String
     nextDeltaToken String?
+    oramaIndex     Json?
     createdAt      DateTime @default(now())
     user User @relation(fields: [userId], references: [id])
     threads Thread[]

@@ -54,7 +54,7 @@ const ThreadList = () => {
                 >
                   <div className="flex items-start justify-between">
                     <div className="font-semibold text-sm text-primary">
-                      {thread.emails.at(-1)?.from?.name || "Unknown Sender"}
+                      {thread.emails.at(-1)?.from?.name || "Me"}
                     </div>
                     <div className="text-xs text-muted-foreground">
                       {formatDistanceToNow(thread.emails.at(-1)?.sentAt ?? new Date(), {

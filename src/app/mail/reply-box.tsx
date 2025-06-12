@@ -1,19 +1,22 @@
-// src/components/ReplyBox.tsx (Corrected)
-
+/* File: src/components/ReplyBox.tsx */
 "use client";
 import React, { useEffect, useState } from "react";
 import EmailEditor from "./email-editor";
 import { api } from "@/trpc/react";
 import useThreads from "@/hooks/use-threads";
-import { toast } from "react-hot-toast";
+import { toast } from "sonner";
 
-// Define the type for recipient values for clarity
 type Recipient = {
   label: string;
   value: string;
 };
 
-const ReplyBox = () => {
+// ✅ ADDED: Define props for the component
+type ReplyBoxProps = {
+  onClose: () => void;
+};
+
+const ReplyBox = ({ onClose }: ReplyBoxProps) => { // ✅ MODIFIED: Accept and destructure onClose prop
   const [subject, setSubject] = useState("");
   const [toValues, setToValues] = useState<Recipient[]>([]);
   const [ccValues, setCcValues] = useState<Recipient[]>([]);
@@ -21,12 +24,11 @@ const ReplyBox = () => {
 
   const { threadId, accountId } = useThreads();
 
-  // Fetch reply-all details once to populate the editor
   const { data: replyDetails, isLoading } = api.account.getReplyDetails.useQuery(
     {
       threadId: threadId as string,
       accountId: accountId as string,
-      replyType: "replyAll", // Use 'replyAll' to pre-fill To and Cc fields correctly
+      replyType: "replyAll",
     },
     {
       enabled: !!threadId && !!accountId,
@@ -37,9 +39,7 @@ const ReplyBox = () => {
     if (replyDetails) {
       setToValues(replyDetails.to);
       setCcValues(replyDetails.cc);
-      setInReplyTo(replyDetails.id); // Store the message ID for the 'In-Reply-To' header
-
-      // Ensure the subject starts with "Re:"
+      setInReplyTo(replyDetails.id);
       const rawSubject = replyDetails.subject || "";
       const isReply = rawSubject.trim().toLowerCase().startsWith("re:");
       setSubject(isReply ? rawSubject : `Re: ${rawSubject}`);
@@ -52,10 +52,9 @@ const ReplyBox = () => {
     { enabled: !!accountId },
   );
 
-  if (!account) return null; // Or a loading/error state
+  if (!account) return null;
 
   const handleSend = async (body: string) => {
-    // Validate required fields before sending
     if (!accountId || !account.emailAddress) {
       toast.error("Account information is missing.");
       return;
@@ -74,7 +73,6 @@ const ReplyBox = () => {
         accountId,
         threadId: threadId ?? "",
         body,
-        // USE THE STATE, NOT the original replyDetails
         subject: subject,
         from: {
           address: account.emailAddress,
@@ -86,11 +84,12 @@ const ReplyBox = () => {
           address: account.emailAddress,
           name: account.name || "",
         },
-        inReplyTo: inReplyTo, // Use the stored message ID
+        inReplyTo: inReplyTo,
       },
       {
         onSuccess: () => {
           toast.success("Reply sent successfully!");
+          onClose(); // ✅ ADDED: Close the reply box on success
         },
         onError: (error) => {
           toast.error(`Failed to send reply: ${error.message}`);
@@ -100,7 +99,6 @@ const ReplyBox = () => {
   };
 
   if (isLoading) {
-    // Your loading skeleton UI here...
     return <div>Preparing your reply editor...</div>;
   }
 
@@ -117,6 +115,7 @@ const ReplyBox = () => {
         handleSend={handleSend}
         isSending={sendEmailMutation.isPending}
         defaultToolbarExpanded={true}
+        onClose={onClose} // ✅ ADDED: Pass onClose prop to EmailEditor
       />
     </div>
   );

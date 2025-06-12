@@ -1,8 +1,4 @@
-/* File: src/components/EmailEditor.tsx
-  - [FIXED] I have removed the `readOnly={true}` property from the Subject input field.
-  - [FIXED] I also removed the gray background and cursor-not-allowed styling.
-  - The subject is now fully editable in both the Compose and Reply views.
-*/
+/* File: src/components/EmailEditor.tsx */
 "use client";
 import React, { useMemo, useCallback } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
@@ -36,6 +32,7 @@ type Props = {
   handleSend: (value: string) => void;
   isSending: boolean;
   defaultToolbarExpanded?: boolean;
+  onClose?: () => void; // ✅ ADDED: Optional callback to handle closing the editor
 };
 
 const EmailEditor = ({
@@ -49,6 +46,7 @@ const EmailEditor = ({
   handleSend,
   isSending,
   defaultToolbarExpanded,
+  onClose, // ✅ ADDED: Destructure prop
 }: Props) => {
   const [value, setValue] = React.useState<string>("");
   const [expanded, setExpanded] = React.useState<boolean>(
@@ -63,10 +61,8 @@ const EmailEditor = ({
   const handleAiAutoComplete = useCallback(
     async (editor: any) => {
       if (!editor || isAiAutocompleting) return;
-
       const currentContent = editor.getText();
       let context: string = "";
-
       if (thread?.emails && thread.emails.length > 0) {
         for (const email of thread.emails) {
           const emailContent = `
@@ -78,13 +74,13 @@ const EmailEditor = ({
           context += emailContent;
         }
       }
-
       if (subject) context += `\nCurrent email subject: ${subject}`;
-      if (to.length > 0) context += `\nCurrent email recipients: ${to.join(", ")}`;
-      if (account) context += `\nMy name is ${account.name} and my email is ${account.emailAddress}`;
+      if (to.length > 0)
+        context += `\nCurrent email recipients: ${to.join(", ")}`;
+      if (account)
+        context += `\nMy name is ${account.name} and my email is ${account.emailAddress}`;
       context += `\nCurrent draft content: ${currentContent}`;
       setIsAiAutocompleting(true);
-
       try {
         await generateEmailContent(
           context,
@@ -165,7 +161,7 @@ const EmailEditor = ({
             <TagInput label="Cc" onChange={setCcValues} placeholder="Add recipients" value={ccValues} />
             <Input
               id="subject"
-              className="font-bold text-md"
+              className="text-md font-bold"
               placeholder="Subject"
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
@@ -211,6 +207,14 @@ const EmailEditor = ({
           >
             {isSending ? "Sending..." : "Send"}
           </Button>
+
+          {/* ✅ ADDED: Conditional Cancel button */}
+          {onClose && (
+            <Button variant="ghost" onClick={onClose} disabled={isSending}>
+              Cancel
+            </Button>
+          )}
+
         </div>
         <span className="w-full text-right text-xs text-gray-500 sm:w-auto">
           Tip: Press{" "}

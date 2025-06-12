@@ -1,6 +1,4 @@
 // app/layout.tsx
-// REMOVED: "use client";
-
 import "@/styles/globals.css";
 
 import { type Metadata } from "next";
@@ -11,6 +9,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 
 import { ClerkProvider } from "@clerk/nextjs";
 import KBar from "@/components/kbar";
+import { Toaster } from "sonner"; // ✅ Import Toaster
 import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
@@ -38,10 +37,9 @@ export default function RootLayout({
             disableTransitionOnChange
           >
             <TRPCReactProvider>
-              {/* KBar does not accept className. The `children` prop will be your actual layout component. */}
-              {/* That layout component needs to define its height (e.g., h-full or h-screen) */}
               <KBar>{children}</KBar>
             </TRPCReactProvider>
+            <Toaster richColors position="bottom-center" /> {/* ✅ Add this line */}
           </ThemeProvider>
         </body>
       </html>

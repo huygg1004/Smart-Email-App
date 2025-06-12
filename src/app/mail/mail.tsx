@@ -14,6 +14,7 @@ import AccountSwitcher from "./account-switcher";
 import SideBar from "./sidebar";
 import ThreadList from "./thread-list";
 import ThreadDisplay from "./thread-display";
+import SearchBar from "./search-bar";
 
 type Props = {
   defaultLayout?: number[];
@@ -97,7 +98,7 @@ const Mail = ({
             <Separator />
 
             {/* Search Bar */}
-            <div className="px-4 py-2">Search Bar</div>
+            <SearchBar/>
 
             {/* Tab Content for Inbox */}
             <TabsContent value="inbox">
