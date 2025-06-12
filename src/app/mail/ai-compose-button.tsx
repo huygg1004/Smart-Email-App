@@ -1,4 +1,3 @@
-// ai-compose-button.tsx
 "use client";
 
 import React from "react";
@@ -13,8 +12,9 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { generateEmail } from "./action"; // Assuming action.ts exists and provides generateEmail
-import { readStreamableValue } from "ai/rsc";
+import useThreads from "@/hooks/use-threads";
+import { turndown } from "@/lib/turndown";
+import { generateEmailContent } from "./ai-generate-util"; // Import the new utility
 
 type Props = {
   onGenerate: (token: string) => void;
@@ -23,79 +23,77 @@ type Props = {
 
 const AIComposeButton = (props: Props) => {
   const [open, setOpen] = React.useState(false);
-  const [prompt, setPrompt] = React.useState("");
+  const [prompt, setPrompt] = React.useState("Write a professional reply to the email in context.");
+  const { threads, threadId, account } = useThreads();
+  const thread = threads?.find((t) => t.id === threadId);
   const [isGenerating, setIsGenerating] = React.useState(false);
 
-  const aiGenerate = async () => {
-    if (!prompt.trim()) {
-      console.log("[AIComposeButton] Prompt is empty, returning.");
-      return;
+  const handleAiGenerate = async () => {
+    let context: string | undefined = "";
+
+    if (props.isComposing) {
+      for (const email of thread?.emails ?? []) {
+        const content = `
+        Subject: ${email.subject}
+        From: ${email.from.address}
+        Sent: ${new Date(email.sentAt).toLocaleString()}
+        Body: ${turndown.turndown(email.body ?? email.bodySnippet ?? "")}
+        `;
+        context += content;
+      }
     }
+    context += `My name is ${account?.name} and my email is ${account?.emailAddress}`;
 
     setIsGenerating(true);
     console.log("[AIComposeButton] Starting AI generation...");
-    try {
-      console.log("[AIComposeButton] Calling generateEmail server action with prompt:", prompt);
-      const { output } = await generateEmail("", prompt);
-      console.log("[AIComposeButton] Server action returned. Type of output:", typeof output, "Value:", output);
 
-      // Check if output is truly a streamable value before iterating
-      if (output) { // More robust check
-        console.log("[AIComposeButton] Attempting to read streamable value...");
-        let receivedAnyToken = false;
-        for await (const token of readStreamableValue(output)) {
-          // *** CRUCIAL CLIENT-SIDE LOG FOR RAW TOKEN RECEPTION ***
-          // Log with quotes to clearly see empty strings, spaces, or non-printable characters.
-          console.log("[AIComposeButton] Raw token from stream:", `"${token}"`);
-          if (token) { // Only call onGenerate if the token is not empty
-            receivedAnyToken = true;
-            props.onGenerate(token);
-          } else {
-            console.log("[AIComposeButton] Received empty/null token from stream.");
-          }
-        }
-        if (!receivedAnyToken) {
-          console.log("[AIComposeButton] Stream finished, but no non-empty tokens were received.");
-        } else {
-          console.log("[AIComposeButton] Stream finished, tokens were received.");
-        }
-      } else {
-        console.error("[AIComposeButton] 'output' is not a valid streamable value. Cannot read stream.");
-      }
+    // Call the shared utility function
+    await generateEmailContent(
+      context,
+      prompt,
+      props.onGenerate,
+      () => setIsGenerating(false), // Callback to set loading state to false
+      () => setOpen(false) // Callback to close dialog
+    );
+  };
 
-    } catch (error) {
-      console.error("[AIComposeButton] AI generate error during stream consumption:", error);
-    } finally {
-      setIsGenerating(false);
-      setOpen(false);
-      setPrompt(""); // Clear prompt on close
-      console.log("[AIComposeButton] AI generation process finished.");
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      handleAiGenerate();
     }
   };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="icon" variant="outline" onClick={() => setOpen(true)}>
+        <Button
+          variant="outline"
+          onClick={() => setOpen(true)}
+          className="flex items-center gap-2"
+        >
           <Bot className="size-5" />
+          Use AI
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>AI Compose</DialogTitle>
           <DialogDescription>
-            AI will compose an email based on the context of your previous emails.
+            AI will compose an email based on the context of your previous
+            emails.
           </DialogDescription>
 
           <Textarea
             placeholder="What would you like to compose?"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={handleKeyDown}
             disabled={isGenerating}
           />
 
           <Button
-            onClick={aiGenerate}
+            onClick={handleAiGenerate}
             disabled={isGenerating || !prompt.trim()}
           >
             {isGenerating ? "Generating..." : "Generate"}

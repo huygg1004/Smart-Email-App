@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";  // Next.js response helper
 
 // Initialize OpenAI client with hardcoded API key
 const openai = new OpenAI({
-  apiKey: "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",
+  apiKey: "none"
 });
 
 export async function GET() {
