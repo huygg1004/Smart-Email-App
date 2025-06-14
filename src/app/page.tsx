@@ -5,7 +5,7 @@ import PrivacyModal from "@/components/PrivacyModal";
 
 export default async function Home() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-gray-50 to-gray-100 px-6 text-gray-800">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-gradient-to-br from-indigo-100 via-gray-100 to-purple-200 px-6 text-gray-800">
       {/* Hero */}
       <section className="max-w-2xl text-center">
         <h1 className="mb-6 text-5xl font-extrabold tracking-tight">
@@ -35,10 +35,11 @@ export default async function Home() {
         ))}
       </section>
 
-      {/* Footer */}
       <footer className="mt-20 flex flex-col items-center text-sm text-gray-500">
-        <AboutMeModal />
-        <PrivacyModal />
+        <div className="flex space-x-4">
+          <AboutMeModal />
+          <PrivacyModal />
+        </div>
         <span className="mt-4">
           &copy; {new Date().getFullYear()} Huy Doan. All rights reserved.
         </span>

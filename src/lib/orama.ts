@@ -1,18 +1,16 @@
-/* File: src/server/lib/orama.ts */
+/* File: src/lib/orama.ts - Clean Version */
 import { type AnyOrama, create, insert, search, count } from "@orama/orama";
 import { db } from "@/server/db";
 import { restore, persist } from "@orama/plugin-data-persistence";
 
-
 const oramaSchema = {
-  id: { type: "string" },
-  subject: { type: "string" },
-  body: { type: "string" },
-  rawBody: { type: "string" },
-  from: { type: "string" },
-  to: { type: "string" }, // Flatten to comma-separated string or something similar
-  sentAt: { type: "string" },
-  threadId: { type: "string" },
+  id: "string",
+  subject: "string",
+  body: "string",
+  rawBody: "string",
+  from: "string",
+  threadId: "string",
+  sentAt: "string",
 } as const;
 
 export class OramaClient {
@@ -23,16 +21,41 @@ export class OramaClient {
     this.accountId = accountId;
   }
 
+  private validateDocument(document: any) {
+    const doc = {
+      id: (document.id || "").toString(),
+      subject: (document.subject || "").toString().trim(),
+      body: (document.body || "").toString().trim(),
+      rawBody: (document.rawBody || document.body || "").toString().trim(),
+      from: (document.from?.address || document.from || "").toString().trim(),
+      threadId: (document.threadId || "").toString(),
+      sentAt: document.sentAt ? new Date(document.sentAt).toISOString() : new Date().toISOString(),
+    };
+
+    if (!doc.id || !doc.threadId) {
+      return null;
+    }
+
+    if (!doc.subject && !doc.body && !doc.from) {
+      return null;
+    }
+
+    // Add default content if empty
+    if (!doc.subject) doc.subject = "(No Subject)";
+    if (!doc.body) doc.body = "(No Body)";
+    if (!doc.rawBody) doc.rawBody = doc.body;
+    if (!doc.from) doc.from = "(Unknown Sender)";
+
+    return doc;
+  }
+
   async saveIndex() {
     try {
-      // NOTE: In a high-concurrency environment, you might want to use a distributed lock (e.g., Redis)
-      // before saving to prevent race conditions.
-      const index = await persist(this.orama, 'json');
+      const index = await persist(this.orama, "json");
       await db.account.update({
         where: { id: this.accountId },
         data: { oramaIndex: index },
       });
-      console.log(`Orama index saved successfully for account: ${this.accountId}`);
     } catch (error) {
       console.error(`Failed to save Orama index for account ${this.accountId}:`, error);
     }
@@ -48,51 +71,65 @@ export class OramaClient {
     }
 
     try {
-      if (account.oramaIndex) {
-        console.log(`Restoring existing Orama index for account: ${this.accountId}`);
-        this.orama = await restore("json", account.oramaIndex as any);
-      } else {
-        console.log(`Creating new Orama index for account: ${this.accountId}`);
-        this.orama = await create({ schema: oramaSchema });
-        await this.populateIndex();
-        await this.saveIndex();
-      }
+      this.orama = await create({ schema: oramaSchema });
+      await this.populateIndex();
+      await this.saveIndex();
     } catch (error) {
-      console.error(`Failed to initialize Orama for account ${this.accountId}. Rebuilding index.`, error);
-      // Fallback: create new index if restore fails
-      await this.rebuildIndex();
+      console.error(`Failed to initialize Orama for account ${this.accountId}:`, error);
+      throw error;
+    }
+  }
+
+  async getIndexStats() {
+    try {
+      const totalCount = await count(this.orama);
+      return { totalCount };
+    } catch (error) {
+      console.error("Failed to get index stats:", error);
+      return { totalCount: 0 };
     }
   }
 
   async populateIndex() {
     try {
-      console.log(`Populating Orama index for account ${this.accountId} with existing emails...`);
       const emails = await db.email.findMany({
         where: {
-          thread: { accountId: this.accountId }
+          thread: { accountId: this.accountId },
         },
-        include: { from: true, to: true, thread: true, },
-        take: 1000, // Process in chunks if necessary
-        orderBy: { sentAt: 'desc' }
+        include: {
+          from: true,
+          thread: {
+            select: {
+              id: true,
+            }
+          }
+        },
+        take: 100,
+        orderBy: { sentAt: "desc" },
       });
 
-      console.log(`Found ${emails.length} emails to index`);
+      if (emails.length === 0) {
+        return;
+      }
 
-      const documents = emails.map(email => ({
-        id: email.id,
-        subject: email.subject || '',
-        body: email.body || '',
-        rawBody: email.bodySnippet || '',
-        from: email.from?.address || '',
-        to: email.to?.map(addr => addr.address) || [],
-        sentAt: email.sentAt?.toISOString() || new Date().toISOString(),
-        threadId: email.threadId || '',
-      }));
+      for (const email of emails) {
+        const doc = this.validateDocument({
+          id: email.id,
+          subject: email.subject,
+          body: email.body,
+          rawBody: email.bodySnippet || email.body,
+          from: email.from,
+          threadId: email.thread?.id,
+          sentAt: email.sentAt,
+        });
 
-      await insert(this.orama, documents);
-      console.log(`Successfully indexed ${await count(this.orama)} total documents.`);
+        if (doc) {
+          await insert(this.orama, doc);
+        }
+      }
     } catch (error) {
-      console.error(`Failed to populate Orama index for account ${this.accountId}:`, error);
+      console.error(`Failed to populate Orama index:`, error);
+      throw error;
     }
   }
 
@@ -101,53 +138,124 @@ export class OramaClient {
       return { hits: [], count: 0 };
     }
 
+    const stats = await this.getIndexStats();
+    
+    if (stats.totalCount === 0) {
+      return { hits: [], count: 0 };
+    }
+
     try {
-      console.log(`Searching for term: "${term}"`);
-      const results = await search(this.orama, {
-        term: term.trim(),
-        properties: ["subject", "body", "from"],
-        limit: 50,
-        boost: { subject: 3, from: 2, body: 1 },
-        threshold: 0.2, // Adjust threshold for relevance
-      });
-      console.log(`Search for "${term}" returned ${results.count} results`);
-      return results;
+      const searchConfigs = [
+        {
+          term: term.trim(),
+          properties: "*",
+          limit: 10,
+        },
+        {
+          term: term.trim(),
+          properties: "*",
+          limit: 10,
+          threshold: 0,
+        },
+        {
+          term: term.trim(),
+          properties: "*",
+          limit: 10,
+          exact: true,
+        }
+      ];
+
+      for (const config of searchConfigs) {
+        try {
+          const results = await search(this.orama, config);
+          
+          if (results.hits.length > 0) {
+            return results;
+          }
+        } catch (searchError) {
+          continue;
+        }
+      }
+
+      return { hits: [], count: 0 };
+      
     } catch (error) {
-      console.error('Search failed:', error);
+      console.error("Search failed:", error);
       return { hits: [], count: 0 };
     }
   }
 
   async insert(document: any) {
     try {
-      const validatedDoc = {
-        id: (document.id || document.emailId).toString(), // ✅ Ensure ID is present
-        subject: (document.subject || '').toString(),
-        body: (document.body || '').toString(),
-        rawBody: (document.rawBody || document.bodySnippet || '').toString(),
-        from: (document.from?.address || document.from || '').toString(),
-        //@ts-ignore
-        to: Array.isArray(document.to) ? document.to.map(t => (t.address || t).toString()) : [],
-        sentAt: document.sentAt?.toLocaleString() || new Date().toLocaleString(),
-        threadId: (document.threadId || '').toString(),
-      };
+      const validatedDoc = this.validateDocument(document);
+      
+      if (!validatedDoc) {
+        return;
+      }
+
       await insert(this.orama, validatedDoc);
     } catch (error) {
-      console.error('Failed to insert document:', { id: document.id, error });
+      console.error(`Failed to insert document ${document.id}:`, error);
     }
   }
 
   async rebuildIndex() {
     try {
-      console.log(`Rebuilding Orama index for account ${this.accountId}...`);
-      //@ts-ignore
       this.orama = await create({ schema: oramaSchema });
       await this.populateIndex();
       await this.saveIndex();
-      console.log('Index rebuilt successfully');
     } catch (error) {
-      console.error('Failed to rebuild index:', error);
+      console.error("Failed to rebuild index:", error);
       throw error;
     }
+  }
+
+  // Debug methods
+  async debugDatabaseEmails() {
+    try {
+      const emailCount = await db.email.count({
+        where: { thread: { accountId: this.accountId } },
+      });
+
+      return { emailCount };
+    } catch (error) {
+      console.error("Failed to debug database emails:", error);
+      return { emailCount: 0 };
+    }
+  }
+
+  async testSearch() {
+    const stats = await this.getIndexStats();
+    const testTerms = ["test", "email", "a", "the"];
+    const results = {};
+    
+    for (const term of testTerms) {
+      const searchResults = await this.search(term);
+      results[term] = searchResults.count;
+    }
+    
+    return results;
+  }
+
+  async debugIndexStructure() {
+    const stats = await this.getIndexStats();
+    return {
+      totalDocuments: stats.totalCount,
+      schema: Object.keys(oramaSchema),
+    };
+  }
+
+  async rebuildAndTest() {
+    await this.rebuildIndex();
+    const results = await this.testSearch();
+    return {
+      success: true,
+      message: "Index rebuilt and tested",
+      testResults: results
+    };
+  }
+
+  async searchWithDebug(term: string) {
+    return await this.search(term);
   }
 }
